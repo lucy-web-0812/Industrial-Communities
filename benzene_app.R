@@ -222,9 +222,7 @@ ui <- navbarPage(
       sidebarPanel(
         width = 3,
         helpText(
-          "Total benzene emissions per 1km grid cell (NAEI, all sources),",
-          "shown on a log colour scale since emissions are highly skewed",
-          "— a handful of cells are much higher than the rest."
+          "Total benzene emissions per 1km grid cell (NAEI, all sources),"
         ),
         selectInput(
           "raster_year",
@@ -242,7 +240,7 @@ ui <- navbarPage(
       ),
       mainPanel(
         width = 9,
-        plotOutput("raster_map", height = 550)
+        imageOutput("raster_map", height = 550)
       )
     )
   )
@@ -506,83 +504,38 @@ server <- function(input, output, session) {
   })
   
   # ---------------------------------------------------------------------------
-  # Gridded Map tab
+  # Gridded Map tab — looks up a pre-rendered PNG rather than building the
+  # raster live. Run preprocess_gridded_maps.R (separately, not as part of
+  # the app) whenever bz_all is refreshed, to regenerate these images.
   # ---------------------------------------------------------------------------
-  
-  # Pull just the selected year/sources from Arrow, and sum across sources
-  # per grid cell — this is the step that turns "one row per source per
-  # cell" into "one row per cell", which is what a raster needs.
-  gridded_emissions <- reactive({
+ 
+  raster_image_path <- reactive({
     req(input$raster_year, input$raster_sources)
-    
-    
-    sources <- as.character(input$raster_sources)
-    year <- as.integer(input$raster_year)
-    
-    naei_ds |>
-      filter(
-        year == year,
-        source %in% sources,
-      ) |>
-      select(x, y, bz) |>
-      collect() |>
-      group_by(x, y) |>
-      summarise(total_bz = sum(bz, na.rm = TRUE), .groups = "drop")
+ 
+    file_stub <- if (input$raster_sources == "tota") {
+      "all_sources"
+    } else {
+      str_replace_all(input$raster_sources, "[^A-Za-z0-9]+", "_")
+    }
+ 
+    file.path("processed_data/gridded_maps", paste0(file_stub, "_", input$raster_year, ".png"))
   })
-  
-  # Build the actual raster. Because bz_all is already a regular 1km grid,
-  # terra::rast(..., type = "xyz") can go straight from (x, y, value) rows
-  # to a raster — no interpolation needed, it just fills in the grid cells
-  # at their known locations. This would NOT work directly on point-source
-  # data with irregular spacing (like bz_point_sources) — that would need
-  # binning into grid cells first, or a proper interpolation method.
-  emissions_raster <- reactive({
-    df <- gridded_emissions()
-    validate(need(nrow(df) > 0, "No gridded data for this year/source selection."))
+ 
+  output$raster_map <- renderImage({
+    path <- raster_image_path()
     
-    r <- terra::rast(
-      as.data.frame(df)[, c("x", "y", "total_bz")],
-      type = "xyz",
-      crs = "EPSG:27700"
-    )
-    
-    # Cells with zero emissions read as clutter rather than signal on a UK-
-    # wide map — treating them as NA lets the plot render them transparent
-    # instead of a flat colour covering the whole country.
-    r[r <= 0] <- NA
-    
-    r
-  })
-  
-  output$raster_map <- renderPlot({
-    r <- emissions_raster()
-  
-    print(names(gridded_emissions()))
-    print(names(emissions_raster()))
-  
-    # terra::as.data.frame(..., xy = TRUE) gives one row per cell with
-    # x, y, and the value column — this is the format geom_raster wants.
-    # The value column keeps its original name from emissions_raster(),
-    # "total_bz", just log-transformed.
-    raster_df <- as.data.frame(r, xy = TRUE)
-    validate(need(nrow(raster_df) > 0, "No non-zero cells to display."))
-    
-    ggplot() +
-      geom_raster(data = raster_df, aes(x = x, y = y, fill = total_bz)) +
-      geom_sf(data = uk_outline, fill = NA, colour = "grey30", linewidth = 0.3, inherit.aes = FALSE) +
-      scale_fill_viridis_c(
-        name = "Total benzene",
-        na.value = "transparent",
-        trans = "log1p"
-        # Colour scale is on the log-transformed values (for a readable
-        # spread across skewed data); labels are converted back to real
-        # units so the legend still means something to a reader.
-      ) +
-      coord_sf(crs = 27700) +
-      theme_minimal() +
-      theme(axis.title = element_blank())
-  })
-  
+    print(path)
+ 
+    validate(need(
+      file.exists(path),
+      paste0(
+        "No pre-rendered map found for this selection (looked for ", path, "). ",
+        "Run preprocess_gridded_maps.R to generate it."
+      )
+    ))
+ 
+    list(src = path, contentType = "image/png", width = "100%", alt = "Gridded emissions map")
+  }, deleteFile = FALSE)
 
   
 }
