@@ -7,8 +7,7 @@ library(rnaturalearth)
 # -----------------------------------------------------------------------------
 # Pre-render gridded benzene emissions maps as PNGs, so the Shiny app can
 # just display an image instead of rebuilding a raster + ggplot on every
-# reactive change. Run this script manually whenever bz_all is refreshed —
-# it does NOT need to run inside the Shiny app itself.
+# reactive change.
 # -----------------------------------------------------------------------------
 
 dataset_path <- "processed_data/bz_all"
@@ -107,7 +106,9 @@ render_map <- function(df, out_path, subtitle) {
     geom_sf(data = uk_outline, fill = NA, colour = "grey30", linewidth = 0.3, inherit.aes = FALSE) +
     scale_fill_viridis_c(
       name = "Total benzene",
-      na.value = "transparent"
+      na.value = "transparent", 
+      trans = "log10",
+      labels = scales::label_number()
     ) +
     coord_sf(crs = 27700, datum = NA) +
     theme_minimal() +

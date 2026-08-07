@@ -57,3 +57,21 @@ rsconnect/
 *.png
 *.parquet
 *.tif
+
+# And the LSOA related big files! 
+
+*.gpkg
+*.xml
+*.shp
+*.nc
+
+
+# And actually just removing these files
+
+
+data/
+ADMS_modelling/model_files/
+
+
+
+

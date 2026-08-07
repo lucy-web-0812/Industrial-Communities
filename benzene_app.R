@@ -57,9 +57,16 @@ total_by_sector_by_year <- point_sources_all |>
 # -----------------------------------------------------------------------------
 
 network_locations <- read_csv("data/measured_data/NAHN_locations.csv") |>
-  select(c(`Site Name`, Latitude, Longitude)) |>
+  select(c(`Site Name`, Latitude, Longitude, `End Date`)) |>
   rename(lng = Longitude, lat = Latitude) |>
-  st_as_sf(coords = c("lng", "lat"), crs = 4326)
+  st_as_sf(coords = c("lng", "lat"), crs = 4326) |> 
+  mutate(`Site Name` = 
+           case_when(`Site Name` == "Birmingham Centre" ~ "Birmingham Roadside",
+                     `Site Name` == "Camden Kerbside" ~ "Camden Kerbside(Swiss Cottage)",
+                     `Site Name` == "Leeds Headingley Kerbside" ~ "Leeds Roadside",
+                     .default    = `Site Name`
+         )) |> 
+  mutate(still_active = ifelse(is.na(`End Date`), T, F))
 
 monitoring_data_raw <- read_csv("data/measured_data/NAHN_measured_data_all.csv", col_names = FALSE)
 names(monitoring_data_raw) <- c("col1", "col2", "col3", "col4")
@@ -89,7 +96,7 @@ benzene_monitoring_data <- monitoring_data |>
     end_date = dmy(col2),
     benzene = as.numeric(col3),
     status_units = col4
-  )
+  ) 
 
 # Names in the two files don't necessarily match character-for-character
 # (whitespace, punctuation) — this keeps only monitoring sites we can
@@ -181,9 +188,11 @@ ui <- navbarPage(
       leafletOutput("map", height = 500),
       br(),
       uiOutput("cluster_title"),
-      plotlyOutput("trend_plot", height = 250),
-      tableOutput("site_table"), 
-      plotlyOutput("total_by_sector_plot")
+      fluidRow(
+        column(4, plotlyOutput("trend_plot", height = 250)),
+        column(4, tableOutput("site_table")),
+        column(4, plotlyOutput("total_by_sector_plot"))
+      )
       )
     )
   ),
@@ -292,14 +301,36 @@ server <- function(input, output, session) {
   })
   
   # Yearly totals per cluster (used for the map + the trend plot)
+  # cluster_yearly <- reactive({
+  #   ps <- clustered_points()
+  #   coords <- st_coordinates(ps)
+  #   
+  #   ps |>
+  #     mutate(x = coords[, 1], y = coords[, 2]) |>
+  #     st_drop_geometry() |>
+  #     group_by(cluster, Year, Sector) |>
+  #     summarise(
+  #       total_emissions = sum(Emission, na.rm = TRUE),
+  #       x = weighted.mean(x, Emission),
+  #       y = weighted.mean(y, Emission),
+  #       n_sites = n_distinct(Site),
+  #       .groups = "drop"
+  #     ) |>
+  #     st_as_sf(coords = c("x", "y"), crs = 27700)
+  # })
+  
+  
   cluster_yearly <- reactive({
     ps <- clustered_points()
     coords <- st_coordinates(ps)
     
     ps |>
-      mutate(x = coords[, 1], y = coords[, 2]) |>
+      mutate(
+        x = coords[, 1],
+        y = coords[, 2]
+      ) |>
       st_drop_geometry() |>
-      group_by(cluster, Year, Sector) |>
+      group_by(cluster, Year, Sector, Site) |>
       summarise(
         total_emissions = sum(Emission, na.rm = TRUE),
         x = weighted.mean(x, Emission),
@@ -309,6 +340,7 @@ server <- function(input, output, session) {
       ) |>
       st_as_sf(coords = c("x", "y"), crs = 27700)
   })
+  
   
   # One summary point per cluster, for the map markers
   cluster_summary <- reactive({
@@ -337,6 +369,8 @@ server <- function(input, output, session) {
     cutoff <- quantile(summary_df$total_emissions, probs = 1 - input$top_pct / 100)
     summary_df |> filter(total_emissions >= cutoff)
   })
+  
+  
   
   # Which cluster is currently selected (via map click)
   selected_cluster <- reactiveVal(NULL)
@@ -376,7 +410,7 @@ server <- function(input, output, session) {
         popup = ~paste0(
           "<b>Cluster ", cluster, "</b><br>",
           "Sites: ", n_sites, "<br>",
-          "Total emissions: ", round(total_emissions, 1)
+          "Total emissions (kg): ", round(total_emissions, 1)
         )
       )
   })
@@ -398,10 +432,10 @@ server <- function(input, output, session) {
       st_drop_geometry() |>
       filter(cluster == selected_cluster()) |>
       filter(Sector %in% input$sectors) |>
-      ggplot(aes(x = Year, y = total_emissions, colour = Sector, group = Sector)) +
+      ggplot(aes(x = Year, y = total_emissions, colour = interaction(Site, Sector), group = interaction(Site, Sector))) +
       geom_line(colour = "#2c3e50") +
       geom_point(size = 2) +
-      scale_y_continuous(name = "Benzene emissions", limits = c(0,NA)) +
+      scale_y_continuous(name = "Benzene emissions (kg)", limits = c(0,NA)) +
       theme_minimal(base_size = 13) +
       theme(legend.position = "top")
     )
@@ -427,7 +461,7 @@ server <- function(input, output, session) {
       rename(
         `Site` = Site,
         `Sector` = Sector,
-        `Total emissions` = total_emissions
+        `Total emissions (over selected time) (kg)` = total_emissions
       )
   })
   
@@ -462,6 +496,9 @@ server <- function(input, output, session) {
     updateSelectInput(session, "monitoring_site", selected = selected_site())
   })
   
+  
+  monitoring_col_pal <- colorFactor(palette = c("red", "#3498db"), domain = network_locations$still_active)
+  
   output$monitoring_map <- renderLeaflet({
     leaflet(network_locations) |>
       addProviderTiles(providers$CartoDB.Positron) |>
@@ -471,7 +508,7 @@ server <- function(input, output, session) {
         stroke = TRUE,
         color = "#2c3e50",
         weight = 1,
-        fillColor = "#3498db",
+        fillColor = ~monitoring_col_pal(network_locations$still_active),
         fillOpacity = 0.8,
         popup = ~`Site Name`
       )
