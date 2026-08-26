@@ -56,7 +56,7 @@ total_by_sector_by_year <- point_sources_all |>
 # Monitoring network data (NAHN benzene monitoring sites)
 # -----------------------------------------------------------------------------
 
-network_locations <- read_csv("data/measured_data/NAHN_locations.csv") |>
+network_locations <- read_csv("data/measured_data/all_NAHN_locations.csv") |>
   select(c(`Site Name`, Latitude, Longitude, `End Date`)) |>
   rename(lng = Longitude, lat = Latitude) |>
   st_as_sf(coords = c("lng", "lat"), crs = 4326) |> 

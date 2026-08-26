@@ -65,6 +65,10 @@ rsconnect/
 *.shp
 *.nc
 
+# Dont need word files or powerpoints
+
+*.docx
+*.pptx
 
 # And actually just removing these files
 

@@ -2,6 +2,7 @@
 library(arrow)
 library(dplyr)
 library(ggplot2)
+library(sf)
 
 remotes::install_github("lucy-web-0812/lucyr")
 
@@ -20,21 +21,61 @@ dataset_path <- "processed_data/bz_all"
 naei_ds <- open_dataset(dataset_path)
 
 
-# Quick plot of emissions timeline
 
-emissions_timeline <- naei_ds |>
-  group_by(year, source) |>
-  summarise(total_emissions = sum(bz, na.rm = TRUE),
-            .groups = "drop") |>
-  collect() # Pull this into R memory
+uk_outline <- rnaturalearth::ne_countries(country = "United Kingdom", scale = "large", returnclass = "sf")
+
+uk_outline_bng <- uk_outline |> 
+  st_transform(crs = 27700) |> 
+  select(geometry)
 
 
-ggplot(emissions_timeline,
-       aes(x = year, y = total_emissions, colour = source, group = source)) +
-  geom_line(linewidth = 1) +
-  geom_point(size = 2) +
-  theme_minimal() +
-  scale_x_continuous(breaks = seq(2005, 2023, by = 2))
+# Create the UK outline grid
+
+
+grid_2023 <- naei_ds |> 
+  filter(
+    year == 2023,
+    source == "01energypro"
+  ) |> 
+  select(x, y) |> 
+  collect()
+
+# Filter to the UK outline 
+
+uk_grid <- grid_2023 |> 
+  st_as_sf(
+    coords = c("x", "y"),
+    crs = 27700
+  ) |> 
+  st_filter(uk_outline_bng)
+
+
+# All the UK X and Y coordinates within the outline....
+
+uk_xy <- uk_grid |> 
+  st_coordinates() |> 
+  as.data.frame() |> 
+  setNames(c("x", "y"))
+
+
+
+# Lets see if we can clip to within the uk outline 
+
+naei_uk <- naei_ds |> 
+  semi_join(uk_xy, by = c("x", "y"))
+
+
+# and save this other dataset.... 
+
+write_dataset(
+  naei_uk,
+  path = "processed_data/bz_uk_filtered",
+  format = "parquet",
+  partitioning = "year"
+)
+
+
+
 
 
 

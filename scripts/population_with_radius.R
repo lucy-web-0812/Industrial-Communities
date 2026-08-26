@@ -20,7 +20,8 @@ small_area_geographies <- st_read_parquet("data/geography/uk-small-area-lsoa-soa
 population_with_radius <- function(x = 344190, 
                                    y = 375060, 
                                    point_crs = 27700, 
-                                   population_radius_km = 10){
+                                   population_radius_km = 10, 
+                                   site_name = NA){
   
   
   point_coordinates <- tibble(x = x, y = y) |> 
@@ -47,8 +48,13 @@ population_with_radius <- function(x = 344190,
     fun = sum,
     na.rm = TRUE
   ) |> 
-    pull(pop_aw) |> 
-    round(0) # Make to the nearest whole number
+    summarise(population = round(pop_aw, 0))  # Make to the nearest whole number 
+  
+  
+  if (is.na(site_name) == F){
+    pop_within_10km <-  pop_within_10km |> 
+      mutate(site = site_name)
+  }
   
   
   return(pop_within_10km)
@@ -57,7 +63,7 @@ population_with_radius <- function(x = 344190,
 
 
 # Wilton 
-population_with_radius(x = 457290, y = 522540, population_radius_km = 10)
+population_with_radius(x = 457290, y = 522540, population_radius_km = 10, site_name = "wilton")
 
 
 # South Killingholme
@@ -81,7 +87,9 @@ population_profile_within_radius <- function(
     population_grid = pop_grid,
     lsoa_geographies = small_area_geographies,
     imd_data = IMD::imd_england_lsoa,
-    point_crs = 27700
+    point_crs = 27700, 
+    site_name = NA, 
+    plot = F
 ) {
   
   point_coordinates <- tibble(x = x, y = y) |>
@@ -107,9 +115,12 @@ population_profile_within_radius <- function(
 
     with_imd_data <- polygons_with_population |>
       left_join(imd_data,
-                by = c("areacode" = "lsoa_code"))
+                by = c("areacode" = "lsoa_code")) |> 
+      mutate(site = site_name)
   
    
+    if (plot == T){
+    
     
    plt <-  with_imd_data |> 
       group_by(IMD_decile) |> 
@@ -134,7 +145,7 @@ population_profile_within_radius <- function(
    
    
    print(spatial_plot)
-   
+    }
    
    return(with_imd_data) 
 }
@@ -147,27 +158,22 @@ stanlow_10k <- population_profile_within_radius(x = 344190,
                                                population_grid = pop_grid,
                                                lsoa_geographies = small_area_geographies,
                                                imd_data = IMD::imd_england_lsoa,
-                                               point_crs = 27700) |> 
-  mutate(site = "Stanlow")
+                                               point_crs = 27700, site_name = "Stanlow")
 
 
 
 # South Killingholme
-south_killingholme <- population_profile_within_radius(515660, 416590, population_radius_km = 10) |> 
-  mutate(site = "South Killingholme")
+south_killingholme <- population_profile_within_radius(515660, 416590, population_radius_km = 10, site_name = "South Killingholme")
 
 # Wilton 
-wilton <- population_profile_within_radius(x = 457290, y = 522540, population_radius_km = 10) |> 
-  mutate(site = "Wilton")
+wilton <- population_profile_within_radius(x = 457290, y = 522540, population_radius_km = 10, site = "Wilton")
 
 # Fawley  443800, 105600
-fawley <- population_profile_within_radius(x = 443800, y = 105600, population_radius_km = 10)|> 
-  mutate(site = "Fawley")
+fawley <- population_profile_within_radius(x = 443800, y = 105600, population_radius_km = 10, site = "Fawley")
 
 
 # Workington Mill  300475, 531230
-workington <- population_profile_within_radius(x = 300475, y = 531230, population_radius_km = 10)|> 
-  mutate(site = "Workington")
+workington <- population_profile_within_radius(x = 300475, y = 531230, population_radius_km = 10, site = "Workington")
 
 
 
@@ -190,10 +196,78 @@ rbind(stanlow_10k,
     mean_prop = mean(prop),
     sd_prop = sd(prop)
   ) |> 
-  ggplot(aes(x = IMD_decile, y = mean_prop)) +
+  ggplot(aes(x = IMD_decile, y = mean_prop, fill = IMD_decile)) +
   geom_col() +
-  geom_errorbar(aes(ymin = mean_prop - sd_prop, ymax = mean_prop + sd_prop), colour = "pink")
+  #geom_errorbar(aes(ymin = mean_prop - sd_prop, ymax = mean_prop + sd_prop), colour = "pink") +
+  scale_fill_distiller(palette = "Set1")
 
 
+
+
+# Now lets test on the pollutant inventory all data! 
+
+
+# read in and tidy the dataset first.... 
+
+pollutant_data_raw <- read_csv("data/EA_PI/2023_pollution_inventory.csv")
+
+
+
+colnames(pollutant_data_raw) <- pollutant_data_raw[9,]
+
+
+
+
+pollutant_data <- pollutant_data_raw |> 
+  janitor::clean_names() |> 
+  slice(-(1:9)) |> 
+  rename(easting = na, northing = na_2, reporting_threshold = na_3)
+
+
+
+
+pollutant_data |> 
+  group_by(substance_name) |> 
+  summarise(total_emissions = sum(as.numeric(quantity_released_kg,  na.rm = T), na.rm = T)) |> 
+  ggplot() +
+  geom_col(aes(x = log(total_emissions), y = reorder(substance_name, total_emissions)))
+ 
+
+
+# Okay so now we want to be able to feed into the function our data from the csv file 
+
+
+benzene_data <- pollutant_data |> 
+ filter(substance_name == "Benzene") |> 
+ filter(route_name == "Air") |> 
+ filter(is.na(as.numeric(quantity_released_kg)) == F) |> 
+  mutate(quantity_released_kg = as.numeric(quantity_released_kg)) |> 
+  arrange(desc(quantity_released_kg))
+
+
+
+
+pop_data <- map_dfr(
+  seq_len(nrow(benzene_data)),
+  \(i) population_profile_within_radius(
+    x = benzene_data$easting[i],
+    y = benzene_data$northing[i],
+    population_radius_km = 5,
+    site_name = benzene_data$operator_name[i]
+  )
+)
+
+
+emissions_data <- benzene_data |> 
+  dplyr::select(operator_name, quantity_released_kg)
+
+
+
+pop_data |> 
+  left_join(emissions_data, join_by(site == operator_name)) |> 
+  mutate(weighted_population = population * quantity_released_kg) |> 
+  ggplot() +
+  geom_col(aes(x = IMD_decile, y = weighted_population, fill = site)) +
+  scale_x_continuous(breaks = seq(1,10,1))
 
 

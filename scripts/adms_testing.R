@@ -6,6 +6,11 @@ library(dplyr)
 library(tidyr)
 library(ggplot2)
 library(viridis)
+library(stringr)
+library(lubridate)
+library(sf)
+library(ggspatial)
+
 
 path <- "ADMS_modelling/model_files/stanlow_test/stanlow_test.nc"   
 
@@ -56,63 +61,65 @@ df_long <- as_tibble(conc, .name_repair = "minimal") |>
 
 
 
-df_long |> 
+summary_metrics <- df_long |> 
   mutate(month = month(date)) |> 
   group_by(season, x, y) |> 
   summarise(max_conc = max(conc, na.rm = T), 
             mean_conc = mean(conc, na.rm = T)) |>
-  pivot_longer(cols = c(max_conc, mean_conc), names_to = "metric", values_to = "conc") |>  
-  ggplot() +
+  pivot_longer(cols = c(max_conc, mean_conc), names_to = "metric", values_to = "conc") 
+  
+
+ggplot(summary_metrics) +
   geom_tile(aes(x = x, y = y, fill = conc), alpha = 0.6) +
   scale_fill_viridis() +
   facet_grid(cols = vars(season), rows = vars(metric))
 
 
-# Add background concentration for total exposure concentration
-# background_benzene <- 0.6    # ppb -> µg/m3, using your nc's conversion factor
-# seasonal_means_total <- seasonal_means + background_benzene
-# 
-# df <- data.frame(x = x, y = y, seasonal_means_total)
-
-
-# Come back to this section to look at data....
-
-# ---- 6. Reshape to long format for faceting ----
-df_long <- df |>
-  pivot_longer(
-    DJF:SON,
-    names_to = "season",
-    values_to = "conc"
-  ) |>
+summary_sf <- summary_metrics |> 
+  filter(metric == "mean_conc") |> 
   mutate(
-    season = factor(season, levels = c("DJF", "MAM", "JJA", "SON"))
-  )
+    xmin = x - 100,
+    xmax = x + 100,
+    ymin = y - 100,
+    ymax = y + 100
+  ) |> 
+  rowwise() |> 
+  mutate(
+    geometry = st_sfc(
+      st_polygon(list(
+        matrix(
+          c(
+            xmin, ymin,
+            xmax, ymin,
+            xmax, ymax,
+            xmin, ymax,
+            xmin, ymin
+          ),
+          ncol = 2,
+          byrow = TRUE
+        )
+      )),
+      crs = 27700
+    )
+  ) |> 
+  ungroup() |> 
+  st_as_sf() |> 
+  st_transform(3857)
 
-# Only used to define the extent
-extent_sf <- df |>
-  st_as_sf(coords = c("x", "y"), crs = 27700)
-
-tiles <- get_tiles(
-  extent_sf,
-  provider = "CartoDB.Positron",
-  crop = TRUE
-)
 
 
-
-ggplot() +
-  geom_spatraster_rgb(data = tiles) +
-  geom_raster(
-    data = df_long,
-    aes(x, y, fill = conc),
-    alpha = 0.7
+summary_sf |> 
+  ggplot() +
+  annotation_map_tile(type = "osm") +
+  geom_sf(
+    aes(fill = conc),
+    colour = NA,
+    alpha = 0.5
   ) +
-  scale_fill_viridis(name = expression(Benzene~(µg/m^3)), limits = c(0,NA)) +
-  facet_wrap(~season) 
-
-
-openair::windRose(met_data, type = "season")
-
+  scale_colour_viridis_c() +
+  scale_fill_viridis_c() +
+  facet_wrap(~season)
 
 
 
+openair::windRose()
