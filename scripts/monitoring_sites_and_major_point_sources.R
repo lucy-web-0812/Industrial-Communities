@@ -52,16 +52,36 @@ monitoring_sites <- rbind(all_NAHN_locations_with_status,
          test = status == test_of_closed) 
 
 
-monitoring_sites |> 
+site_counts <- monitoring_sites |> 
   st_drop_geometry() |> 
-  group_by(network, status) |> 
-  summarise(count = n())
+  group_by(network, status, `Environment Type`) |> 
+  summarise(count = n()) 
 
 
 start_and_ends_NAHN <- read_csv("data/measured_data/start_and_end_NAHN.csv") |> 
   mutate(network = "NAHN")
 start_and_ends_AHN <- read_csv("data/measured_data/start_and_end_AHN.csv") |> 
   mutate(network = "AHN")
+
+ 
+
+
+site_counts |>
+  mutate(`Environment Type` = reorder(`Environment Type`, count, sum),
+         status = factor(status, levels = c("closed", "active"))) |>
+  ggplot(aes(x = count, y = `Environment Type`, fill = status)) +
+  geom_col(colour = "white", width = 0.7, position = "stack") +
+  facet_wrap(~network, ncol = 1, scales = "free_y") +
+  scale_fill_manual(values = c(active = "#2a78d6", closed = "#b5b5b0"), name = "") +
+  labs(x = "Number of monitoring sites", y = NULL) +
+  theme_minimal(16) +
+  theme(legend.position = "top", panel.grid.major.y = element_blank()) 
+
+
+
+
+
+
 
 sites_active_years <- start_and_ends_NAHN |>
   rbind(start_and_ends_AHN) |> 
@@ -79,35 +99,96 @@ sites_active_years <- start_and_ends_NAHN |>
   ungroup() |>
   unnest(year) |> 
   select(`Site Name`, network, year) |> 
-  left_join(monitoring_sites |> select('Site Name', geometry)) |> 
+  left_join(monitoring_sites |> select('Site Name', geometry, `Environment Type`)) |> 
   st_as_sf(crs = 4326)
 
 
 
 
 sites_per_year <- sites_active_years |>
-  count(year, network, name = "n_sites")
+  count(year, network, `Environment Type`,name = "n_sites")
 
 
 
-ggplot(sites_per_year) +
-  geom_line(aes(x = year, y = n_sites, colour = network)) +
-  geom_point(aes(x = year, y = n_sites, colour = network)) +
-  scale_colour_manual(values = c("#E78AC3", "#A6D854")) +
-  scale_y_continuous(name = "Number of sites", expand = c(0,0), limits = c(0,NA)) +
-  scale_x_continuous(name = "Year") +
-  theme_minimal(16) +
-  theme(axis.line = element_line())
+category_colours <- c(
+  "Urban Traffic"       = "#2a78d6",  # blue   — cool / urban
+  "Urban Industrial"    = "#4a3aa7",  # violet — cool / urban
+  "Urban Background"    = "#1baf7a",  # aqua   — cool / urban
+  "Suburban Background" = "#eda100",  # gold   — warm / non-urban
+  "Rural Background"    = "#e34948"   # red    — warm / non-urban
+)
+
+
+sites_per_year |>
+  mutate(
+    network = ifelse(network == "AHN", "Automatic", "Non-Automatic"),
+    `Environment Type` = ifelse(
+      `Environment Type` == "Unknown Industrial",
+      "Urban Industrial",
+      `Environment Type`
+    ),
+    `Environment Type` = factor(`Environment Type`, levels = names(category_colours))
+  ) |>
+  st_drop_geometry() |>
+  group_by(year, `Environment Type`) |>
+  summarise(n_sites = sum(n_sites)) |>
+  ggplot(aes(x = year, y = n_sites, fill = `Environment Type`)) +
+  geom_col(position = "stack", alpha = 0.8) +
+  scale_fill_manual(values = category_colours, name = "Monitor Type") +
+  scale_y_continuous(name = "Number of sites",
+                     expand = c(0, 0),
+                     limits = c(0, 50)) +
+  scale_x_continuous(
+    name = "Year",
+    breaks = seq(1990, 2030, 5),
+    minor_breaks = seq(1993, 2026, 1),
+    limits = c(1992, 2027),
+    expand = c(0,0),
+    guide = guide_axis(minor.ticks = TRUE)
+  ) +
+  theme_minimal(12) +
+  labs(caption = "Sites originally classified as \"Unknown Industrial\" (n = 1, for years 2008 to 2010) are shown here under Urban Industrial.") +
+  theme(
+    axis.line = element_line(),
+    legend.position = "top",
+    axis.ticks = element_line(),
+    legend.title.position = "top", 
+    legend.title = element_text(face = "bold"), 
+    legend.justification = "left", 
+    legend.text = element_text(size = 8)
+  )  
 
 
 
-ggsave("plots/basic_plots/ahn_vs_nahn_numbers.png")
+ggsave("plots/basic_plots/type_of_site.png", height = 12, width = 18, units = "cm", dpi = 600)
 
 
-ggplot(monitoring_sites) +
+
+ggsave("plots/basic_plots/ahn_vs_nahn_numbers.png", height = 12, width = 18, units = "cm", dpi = 600)
+
+
+# And a map of where these are..... 
+
+library(rnaturalearth)
+
+uk_outline <- ne_countries(country = "United Kingdom", scale = "medium", returnclass = "sf") |>
+  st_transform(crs = st_crs(monitoring_sites)) 
+
+
+monitoring_sites |> 
+  filter(status == "active") |> 
+  ggplot() +
   annotation_map_tile(zoom = 7, type = "cartolight") +
-  geom_sf(aes(geometry = geometry, colour = status, shape = network), size = 2) +
-  scale_colour_manual(values = c("#E78AC3", "#A6D854")) 
+  geom_sf(data = uk_outline, fill = NA, colour = NA) +  
+  geom_sf(aes(geometry = geometry, colour = network, shape = network), size = 3.5) +
+  scale_colour_manual(values = c("#E78AC3", "#A6D854"), name = "Network") +
+  scale_shape(name = "Network") +
+  theme(legend.position = "top", 
+        axis.text = element_blank(), 
+        axis.ticks = element_blank())
+
+
+ggsave("plots/basic_plots/ahn_vs_nahn_current_locations.png", height = 18, width = 12, units = "cm", dpi = 600)
 
 
 
@@ -142,14 +223,23 @@ point_sources |>
   ggplot() +
   geom_point(aes(x = Year, y = total_emissions_per_year)) +
   geom_line(aes(x = Year, y = total_emissions_per_year)) +
-  scale_y_continuous(limits = c(0,NA)) 
+  scale_y_continuous(limits = c(0,2000), name = "Emissions from Point Sources (kg)", expand = c(0,0)) +
+  theme_minimal(18) +
+  theme(legend.position = "top", 
+        axis.line = element_line(), 
+        axis.ticks = element_line()) 
 
-  
+ 
+ggsave("plots/basic_plots/point_source_emissions.png", height = 12, width = 18, units = "cm", dpi = 600)
+
+
+
+ 
 
 ggplot(monitoring_sites) +
   annotation_map_tile(zoom = 7, type = "cartolight") +
   geom_sf(aes(geometry = geometry, colour = status, shape = network), size = 2) +
-  scale_colour_manual(values = c("darkgreen","red")) +
+ # scale_colour_manual(values = c("darkgreen","red")) +
   ggnewscale::new_scale_colour() +
   geom_sf(data = major_sources_2023, aes(geometry = geometry, colour = "Major point source"), shape = 4) +
   scale_colour_manual(
@@ -193,7 +283,7 @@ leaflet() |>
     data = major_sources_2023,
     radius = 7,
     color = "black",
-    fill = FALSE,
+    fill = "black",
     weight = 2,
     group = "Major point sources"
   ) |>

@@ -11,7 +11,7 @@ library(plotly)
 ###################################################
 
 
-network_locations <- read_csv("data/measured_data/NAHN_locations.csv") |> 
+network_locations <- read_csv("data/measured_data/all_NAHN_locations.csv") |> 
   select(c(`Site Name`, Latitude, Longitude, `Environment Type`)) |> 
   rename(lng = Longitude, lat = Latitude) |> 
   st_as_sf(coords = c("lng", "lat"), crs = 4326) |> 

@@ -1,0 +1,57 @@
+---
+title: "Status of Benzene Emissions and Monitoring in the UK"
+author: "Lucy Webster"
+format: html
+editor: source
+---
+
+```{r setup}
+# Loading in r packages required and setting the quarto doc to look at the project root 
+#| message: false
+#| warning: false
+#| echo: false
+
+
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+
+library(tidyverse)
+
+
+```
+
+```{r laoding in datasets}
+#| message: false
+#| warning: false
+#| echo: false
+
+
+total_emissions <- read_csv("data/basic_benzene_data_for_ally/total_benzene_emissions.csv")
+```
+
+# Status of Benzene Emissions and Monitoring in the UK
+
+## Emissions
+
+```{r}
+
+total_emissions |> 
+  ggplot() +
+  geom_point(aes(x = year, y = total_emissions), size = 0.8) +
+  geom_line(aes(x = year, y = total_emissions)) +
+  scale_y_continuous(name = "Benzene Emissions (kilotonnes)", expand = c(0,0), breaks = seq(0,60,10), limits = c(0,65)) +
+  scale_x_continuous(name = "Year", expand = c(0,0), limits = c(1989.5, 2025.5), breaks = seq(1990, 2026,5), minor_breaks = seq(1990,2025,1))  +
+  theme_minimal(18) +
+  theme(legend.position = "top", 
+        axis.line = element_line(), 
+        axis.ticks = element_line()) 
+
+```
+
+
+
+### Historic Emissions Trend 
+
+### Emissions from Point Sources
+
+#### Point Sources as a % of total emissions 
