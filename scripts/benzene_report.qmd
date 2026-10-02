@@ -1,10 +1,12 @@
 ---
 title: "Status of Benzene Emissions and Monitoring in the UK"
 author: "Lucy Webster"
+output-file: index
 format:
   html:
     toc: true
     toc-location: left
+    crossrefs-hover: false
   docx:
     toc: true
   pdf:
@@ -108,11 +110,13 @@ yearly_emissions <- naei_totals |>
 
 ## Total Emissions
 
-The National Atmospheric Emissions Inventory (NAEI) produce annual estimates on the emission of Benzene in the UK. Total emissions have fallen from 60.9 kt in 1990 to 8.0 kt in 2023, a reduction of 87%. The majority of this reduction happened in the 1990s, as catalytic converters and evaporative emission controls spread through the petrol car fleet. The single biggest year-on-year drop was between 1999 and 2000, when emissions fell from 37.8 kt to 22.1 kt. This coincided with the EU Fuel Quality Directive (98/70/EC) reducing the maximum allowable benzene content of petrol from 5% to 1% by volume from January 2000. Since around 2010 annual emissions of benzene have not maintained a steep reduction trend.
+The [UK National Atmospheric Emissions Inventory (NAEI)](https://naei.energysecurity.gov.uk/) produce annual estimates of the emissions of Benzene in the UK. Total emissions have fallen from 60.9 kt in 1990 to 8.0 kt in 2023, a reduction of 87%, see @fig-total-emissions. The majority of this reduction happened in the 1990s, as catalytic converters and emission controls applied to the car fleet. The single biggest year-on-year drop was between 1999 and 2000, when emissions fell from 37.8 kt to 22.1 kt. This coincided with the EU Fuel Quality Directive (98/70/EC) reducing the maximum allowable benzene content of petrol from 5% to 1% by volume from January 2000. Since around 2010 annual emissions of benzene have plateaued, and as of 2023 annual emissions were 8.0 kt.
 
 *Emissions reported as memo items (including international maritime navigation and international aviation cruise, "z\_") were excluded, consistent with national totals reported under the UNECE Convention on Long-range Transboundary Air Pollution (CLRTAP).*
 
 ```{r}
+#| label: fig-total-emissions
+#| fig-cap: "Annual UK benzene emissions, 1990–2023. Excludes memo items (international shipping and international aviation cruise). Source: NAEI."
 #| echo: false
 #| warning: false
 #| fig-height: 5
@@ -158,6 +162,8 @@ The NAEI reports benzene emissions from about 342 individual sources. For this r
 In 1990, road transport dominated UK benzene emissions and accounted for three-quarters (75%) of the total. Its share has fallen steadily as regulation has been introduced, and by 2023 road transport contributed 12% of the total emissions (0.9 kt, down from 46 kt). No other source have seen similar levels of reduction so the mix of sources now looks different. In 2015, Domestic combustion overtook road transport as the largest single source in 2015 and made up a third (33%) of emissions in 2023. Industry (16%), shipping and other transport (13%) and waste (11%) are now all comparable to or larger than road transport.
 
 ```{r bar-chart}
+#| label: fig-source-shares
+#| fig-cap: "Share of UK benzene emissions by source category, 1990–2023. Sources have been grouped into seven categories (see benzene_source_lookup.csv). Source: NAEI."
 #| echo: false
 #| fig-height: 5
 
@@ -291,6 +297,8 @@ show_facets <- function(p) {
 Each panel shows benzene emissions from one source category in kilotonnes. *Note:* Every panel has a separately scaled y-axis.
 
 ```{r absolute-source}
+#| label: fig-source-absolute
+#| fig-cap: "Annual benzene emissions (kt) by source category, 1990–2023. Each panel has its own y-axis scale. Panels are ordered by the reduction since 1990, largest first."
 #| echo: false
 #| warning: false
 
@@ -311,6 +319,8 @@ show_plot(p_absolute, height = 550)
 Each line shows a category's emissions as a percentage of the 1990 emissions. Road transport has fallen to 2% of its 1990 level, while waste (76%), shipping and other transport (69%) and domestic combustion (59%) have reduced by a lower fraction. These sources now make up a much bigger share of the total.
 
 ```{r}
+#| label: fig-source-relative
+#| fig-cap: "Benzene emissions by source category as a percentage of 1990 emissions. The dashed line marks the 1990 level (100%)."
 #| echo: false
 #| warning: false
 
@@ -397,6 +407,8 @@ top10_share <- site_ranking |>
 
 
 ```{r point-share}
+#| label: fig-point-share
+#| fig-cap: "Benzene emissions from point sources as a percentage of total UK emissions, 2005–2023. Source: NAEI point source database and national totals."
 #| echo: false
 #| warning: false
  
@@ -422,6 +434,8 @@ show_plot(p_point_share)
 Total point-source emissions are dominated by a small number of sites. Of the `r n_sites` sites reporting benzene emissions in `r latest_year`, the ten largest account for `r scales::percent(top10_share, accuracy = 1)` of point-source emissions.
  
 ```{r point-concentration}
+#| label: fig-point-concentration
+#| fig-cap: "Cumulative share of point-source benzene emissions in 2023, with sites ordered from largest to smallest. A steep early rise means a small number of sites account for most emissions."
 #| echo: false
 #| warning: false
  
@@ -449,6 +463,8 @@ show_plot(p_concentration)
 #### Largest point sources
  
 ```{r top-sites-map}
+#| label: fig-top-sites-map
+#| fig-cap: "Locations of the largest benzene point sources in 2023. Circle area is proportional to annual emissions (tonnes)."
 #| echo: false
 #| warning: false
 #| column: page
@@ -607,6 +623,8 @@ The Non-Automatic Hydrocarbon Network gives much wider coverage, with `r n_activ
 ## Sites per year
 
 ```{r sites-per-year}
+#| label: fig-sites-per-year
+#| fig-cap: "Number of benzene monitoring sites operating each year across the automatic and non-automatic networks, by site type. A site is counted if it operated for any part of the year. One site classified as 'Unknown Industrial' (2008–2010) is shown as Urban Industrial."
 #| echo: false
 #| warning: false
 
@@ -639,6 +657,8 @@ show_plot(p_sites_year)
 ## Active and closed sites
 
 ```{r site-status}
+#| label: fig-site-status
+#| fig-cap: "Active and closed benzene monitoring sites in each network, by site type."
 #| echo: false
 #| warning: false
 
@@ -694,6 +714,8 @@ The monitoring networks were largely designed when road transport dominated benz
 Of the `r n_communities` largest point sources in `r latest_year`, `r n_no_monitor_10km` have no active benzene monitor within 10 km. The median distance from one of these sites to its nearest active monitor is `r round(median_current_km)` km.
 
 ```{r monitoring-map}
+#| label: fig-monitoring-map
+#| fig-cap: "Active benzene monitoring sites and the ten largest point sources in 2023 (red), each shown with a 10 km radius."
 #| echo: false
 #| warning: false
 #| column: page
@@ -767,6 +789,8 @@ if (knitr::is_html_output()) {
 #### Nearest monitor to each major source
 
 ```{r nearest-table}
+#| label: tbl-nearest-monitor
+#| tbl-cap: "Nearest active benzene monitor to each of the ten largest point sources in 2023, and the number of active monitors within 10 km."
 #| echo: false
 
 nearest_monitor_current |>
@@ -786,6 +810,8 @@ nearest_monitor_current |>
 The chart below compares each year's 100 largest point sources with the monitors running in that year. It shows the median distance to the nearest monitor, and the mean weighted by emissions, which gives more influence to the largest sources.
 
 ```{r distance-trend}
+#| label: fig-distance-trend
+#| fig-cap: "Distance from each year's 100 largest point sources to the nearest monitor operating in that year. The emission-weighted mean gives more influence to the largest sources."
 #| echo: false
 #| warning: false
 
@@ -841,6 +867,8 @@ comparison_colours <- c(
 No automatic and non-automatic monitors share a location, so the two methods cannot be compared directly. The table below lists the ten closest pairs of automatic and non-automatic sites that operated in the same years.
  
 ```{r closest-pairs-table}
+#| label: tbl-closest-pairs
+#| tbl-cap: "The ten closest pairs of automatic and non-automatic monitoring sites that operated in the same years."
 #| echo: false
  
 closest_pairs |>
@@ -859,6 +887,8 @@ closest_pairs |>
 London Marylebone Road (automatic) was compared with two nearby non-automatic sites: Camden Kerbside, another roadside site, and London Bloomsbury, an urban background site.
  
 ```{r comparison-map}
+#| label: fig-comparison-map
+#| fig-cap: "Locations of London Marylebone Road (automatic), Camden Kerbside and London Bloomsbury (non-automatic)."
 #| echo: false
 #| warning: false
  
@@ -911,6 +941,8 @@ if (knitr::is_html_output()) {
 The chart below shows fortnightly benzene concentrations at the three sites. The automatic values are hourly measurements averaged over the same two-week periods as the non-automatic samples.
  
 ```{r comparison-plot}
+#| label: fig-comparison-fortnightly
+#| fig-cap: "Fortnightly benzene concentrations at London Marylebone Road (automatic, hourly data averaged over each sampling period), Camden Kerbside and London Bloomsbury (non-automatic). Gaps of more than one month are left unjoined."
 #| echo: false
 #| warning: false
 #| column: page

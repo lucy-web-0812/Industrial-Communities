@@ -58,7 +58,7 @@ rsconnect/
 *.parquet
 *.tif
 
-# And the LSOA related big files! 
+# And the LSOA related big files!
 
 *.gpkg
 *.xml
@@ -79,3 +79,6 @@ ADMS_modelling/model_files/
 
 
 
+
+/.quarto/
+**/*.quarto_ipynb
