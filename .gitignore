@@ -42,8 +42,7 @@ vignettes/*.pdf
 # R Environment Variables
 .Renviron
 
-# pkgdown site
-docs/
+
 
 # translation temp files
 po/*~
@@ -67,7 +66,7 @@ rsconnect/
 
 # Dont need word files or powerpoints
 
-*.docx
+.docx
 *.pptx
 
 # And actually just removing these files
