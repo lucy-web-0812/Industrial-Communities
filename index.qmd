@@ -1,7 +1,6 @@
 ---
 title: "Status of Benzene Emissions and Monitoring in the UK"
 author: "Lucy Webster"
-output-file: index
 format:
   html:
     toc: true
