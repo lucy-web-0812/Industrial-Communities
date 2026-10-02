@@ -60,6 +60,10 @@ benzene_monitoring_data <- monitoring_data |>
 
 
 
+write_rds(benzene_monitoring_data, "data/measured_data/nahn_monitoring_data.rds")
+
+
+
 
 leaflet(network_locations) |> 
   addTiles() |> 

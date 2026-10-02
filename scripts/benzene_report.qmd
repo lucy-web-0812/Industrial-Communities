@@ -1,57 +1,940 @@
 ---
 title: "Status of Benzene Emissions and Monitoring in the UK"
 author: "Lucy Webster"
-format: html
+format:
+  html:
+    toc: true
+    toc-location: left
+  docx:
+    toc: true
+  pdf:
+    toc: true
+    fig-align: center
+    fig-width: 6.5
+    fig-height: 3.8
+    geometry:
+      - top=2.5cm
+      - bottom=2.5cm
+      - left=2.5cm
+      - right=2.5cm
 editor: source
 ---
 
 ```{r setup}
-# Loading in r packages required and setting the quarto doc to look at the project root 
+#| echo: false
 #| message: false
 #| warning: false
-#| echo: false
+
+
+# Loading in r packages required and setting the quarto doc to look at the project root 
+
+
 
 
 knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
 
+knitr::opts_chunk$set(
+    out.width = "100%", # enough room to breath
+    fig.width = 6,     # reasonable size
+    fig.asp = 0.718,   # golden ratio
+    fig.align = "center" # mostly what I want
+)
+
+
 
 library(tidyverse)
+library(plotly)
+library(scales)
+library(sf)
+library(leaflet)
+
+
+
+
+base_size <- if (knitr::is_html_output()) 14 else 10          # smaller text on A4
+
+knitr::opts_chunk$set(
+  dev = if (knitr::is_latex_output()) "cairo_pdf" else "png",   # fixes µ and ⁻³ (see 4)
+  fig.align = "center"
+)
+
+show_plot <- function(p, height = NULL) {
+  if (knitr::is_html_output()) {
+    ggplotly(p, tooltip = "text", height = height) |>
+      config(displayModeBar = FALSE)
+  } else {
+    p
+  }
+}
+
 
 
 ```
 
 ```{r laoding in datasets}
+#| echo: false
 #| message: false
 #| warning: false
-#| echo: false
 
 
-total_emissions <- read_csv("data/basic_benzene_data_for_ally/total_benzene_emissions.csv")
+
+yearly_emissions <- read_csv("data/basic_benzene_data_for_ally/total_benzene_emissions.csv")
+
+
+naei_totals_raw <- read_csv(
+  "data/naei_inventory_total/naei_uk_emissions_data_benzene.csv",
+  na = c("", "NA", "-")
+)
+
+source_lookup <- read_csv("data/naei_inventory_total/benzene_source_lookup.csv")
+
+# ---- Process NAEI data (moved up so every figure uses the same totals) ----
+naei_totals <- naei_totals_raw |>
+  filter(!str_starts(`NFR/CRT Group`, "z_")) |>          # drop memo items
+  pivot_longer(`1990`:`2023`,
+               names_to = "year", values_to = "benzene_emission",
+               names_transform = as.numeric) |>
+  left_join(source_lookup,
+            by = c("NFR/CRT Group" = "nfr_code", "Source" = "source"))
+
+# Check: stops with an error if a new NAEI release adds a source you haven't mapped
+stopifnot(!anyNA(naei_totals$final_category))
+
+# National total excluding memo items (replaces total_benzene_emissions.csv,
+# which appears to include them: 62.1 kt vs 60.9 kt in 1990)
+yearly_emissions <- naei_totals |>
+  summarise(total_emissions_kt = sum(benzene_emission, na.rm = TRUE), .by = year)
 ```
 
-# Status of Benzene Emissions and Monitoring in the UK
+## Total Emissions
 
-## Emissions
+The National Atmospheric Emissions Inventory (NAEI) produce annual estimates on the emission of Benzene in the UK. Total emissions have fallen from 60.9 kt in 1990 to 8.0 kt in 2023, a reduction of 87%. The majority of this reduction happened in the 1990s, as catalytic converters and evaporative emission controls spread through the petrol car fleet. The single biggest year-on-year drop was between 1999 and 2000, when emissions fell from 37.8 kt to 22.1 kt. This coincided with the EU Fuel Quality Directive (98/70/EC) reducing the maximum allowable benzene content of petrol from 5% to 1% by volume from January 2000. Since around 2010 annual emissions of benzene have not maintained a steep reduction trend.
+
+*Emissions reported as memo items (including international maritime navigation and international aviation cruise, "z\_") were excluded, consistent with national totals reported under the UNECE Convention on Long-range Transboundary Air Pollution (CLRTAP).*
 
 ```{r}
+#| echo: false
+#| warning: false
+#| fig-height: 5
 
-total_emissions |> 
-  ggplot() +
-  geom_point(aes(x = year, y = total_emissions), size = 0.8) +
-  geom_line(aes(x = year, y = total_emissions)) +
-  scale_y_continuous(name = "Benzene Emissions (kilotonnes)", expand = c(0,0), breaks = seq(0,60,10), limits = c(0,65)) +
-  scale_x_continuous(name = "Year", expand = c(0,0), limits = c(1989.5, 2025.5), breaks = seq(1990, 2026,5), minor_breaks = seq(1990,2025,1))  +
-  theme_minimal(18) +
-  theme(legend.position = "top", 
-        axis.line = element_line(), 
-        axis.ticks = element_line()) 
+p_total <- yearly_emissions |>
+    ggplot(aes(
+      x = year, 
+      y = total_emissions_kt
+    )) +
+    geom_point(aes(text = paste0("Year: ", year, "<br>",
+                        "Emissions: ", round(total_emissions_kt, 1), " kt")),
+               size = 0.8) +
+    geom_line() +
+    scale_y_continuous(
+      name = "Benzene Emissions (kilotonnes)",
+      expand = c(0, 0),
+      breaks = seq(0, 60, 10),
+      limits = c(0, 65)
+    ) +
+    scale_x_continuous(
+      name = "Year",
+      expand = c(0, 0),
+      limits = c(1989.5, 2025.5),
+      breaks = seq(1990, 2026, 5),
+      minor_breaks = seq(1990, 2025, 1)
+    )  +
+    theme_minimal(base_size) +
+    theme(
+      legend.position = "top",
+      axis.line = element_line(),
+      axis.ticks = element_line()
+    )
 
+
+show_plot(p_total)
+
+```
+
+### By Emission Source
+
+The NAEI reports benzene emissions from about 342 individual sources. For this report they have been grouped into seven broad categories (see `benzene_source_lookup.csv` for the full mapping). The figure below shows each category's share of the national total in each year.
+
+In 1990, road transport dominated UK benzene emissions and accounted for three-quarters (75%) of the total. Its share has fallen steadily as regulation has been introduced, and by 2023 road transport contributed 12% of the total emissions (0.9 kt, down from 46 kt). No other source have seen similar levels of reduction so the mix of sources now looks different. In 2015, Domestic combustion overtook road transport as the largest single source in 2015 and made up a third (33%) of emissions in 2023. Industry (16%), shipping and other transport (13%) and waste (11%) are now all comparable to or larger than road transport.
+
+```{r bar-chart}
+#| echo: false
+#| fig-height: 5
+
+# Order categories by 2023 size so plot legends read biggest to smallest
+cat_order <- naei_totals |>
+  filter(year == 2023) |>
+  summarise(total = sum(benzene_emission, na.rm = TRUE), .by = final_category) |>
+  arrange(desc(total)) |>
+  pull(final_category)
+
+naei_totals <- naei_totals |>
+  mutate(final_category = factor(final_category, levels = cat_order))
+
+
+# ---- Fixed colours: one per category, matched by name ----
+source_colours <- c(
+  "Domestic"                   = "#FFCD12FF",  
+  "Industry"                   = "#A40000FF",  
+  "Shipping & other transport" = "#007E2FFF",  
+  "Road transport"             = "#16317DFF",  
+  "Waste"                      = "#721B3EFF", 
+  "Oil, gas & fuel supply"     = "#B86092FF",  
+  "Off-road machinery"         = "#00B7A7FF"   
+)
+
+
+# ---- Yearly shares by category ----
+category_shares <- naei_totals |>
+  summarise(emission = sum(benzene_emission, na.rm = TRUE),
+            .by = c(year, final_category)) |>
+  mutate(share = emission / sum(emission), .by = year) |>
+  mutate(final_category = factor(final_category, levels = names(source_colours)))
+
+
+# ---- Plot 1: share of emissions every year ----
+p_share <- category_shares |>
+  ggplot(aes(
+    x = year, y = share, fill = final_category,
+    text = paste0("<b>", final_category, "</b><br>",
+                  "Year: ", year, "<br>",
+                  "Share: ", percent(share, accuracy = 0.1), "<br>",
+                  "Emissions: ", round(emission, 2), " kt")
+  )) +
+  geom_col(width = 0.85, colour = "white", linewidth = 0.2, alpha = 0.6) +  # thin white gaps between segments
+  scale_fill_manual(values = source_colours, name = NULL) +
+  scale_y_continuous(name = "Share of UK benzene emissions",
+                     labels = percent, expand = c(0, 0), minor_breaks = seq(0,1,0.1), breaks = seq(0,1,0.2)) +
+  scale_x_continuous(name = "Year", breaks = seq(1990, 2020, 5),
+                     expand = c(0.01, 0)) +
+  guides(fill = guide_legend(nrow = 2)) +
+  theme_minimal(base_size) +
+  theme(
+    legend.position = "top",
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.ticks.x = element_line()
+  )
+
+
+
+show_plot(p_share)
+
+```
+
+However, a rising share does not mean rising emissions. Domestic emissions fell from 4.4 kt in 1990 to 2.6 kt in 2023; they simply fell more slowly than everything else. The next figures show the change in absolute terms. Within the domestic sector, the fuel mix has changed markedly. Coal burning, which produced 1.9 kt in 1990, now produces less than 0.1 kt. Over the same period, emissions from domestic wood burning have roughly tripled, from 0.5 kt to 1.7 kt, and wood is now the main source of domestic benzene. Waste and shipping have also become relatively more important as their emissions have changed little since 1990.
+
+
+```{r relative-source}
+#| echo: false
+#| warning: false
+#| fig-height: 6
+
+# ---- Data: add % of 1990 to every row, used by both tabs ----
+baseline_values <- category_shares |> 
+  filter(year == 1990) |> 
+  select(final_category, baseline_emission = emission)
+
+category_trends <- category_shares |> 
+  left_join(baseline_values, by = "final_category") |> 
+  mutate(emissions_pct_baseline = emission / baseline_emission * 100)
+
+# Same panel order in both tabs: biggest reduction first
+panel_order <- category_trends |> 
+  filter(year == max(year)) |> 
+  arrange(emissions_pct_baseline) |> 
+  pull(final_category)
+
+category_trends <- category_trends |> 
+  mutate(final_category = factor(final_category, levels = panel_order))
+
+# ---- Shared style for both faceted charts ----
+facet_style <- list(
+  geom_line(linewidth = 0.8),
+  geom_point(aes(text = paste0("<b>", final_category, "</b><br>",
+                               "Year: ", year, "<br>",
+                               "Emissions: ", round(emission, 2), " kt<br>",
+                               "% of 1990: ", round(emissions_pct_baseline), "%")),
+             size = 0.06),
+  scale_colour_manual(values = source_colours, guide = "none"),
+  scale_x_continuous(name = "Year",
+                     breaks = seq(1990, 2020, 5),
+                     labels = \(x) ifelse(x %in% c(1990, 2005, 2020), x, "")),
+  theme_minimal(base_size),
+  theme(
+    legend.position = "none",
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.spacing.x = unit(1, "lines"),
+    panel.spacing.y = unit(2, "lines"),
+    strip.text = element_text(face = "bold", hjust = 0),
+    axis.ticks.x = element_line(colour = "grey70"),
+    axis.ticks.length.x = unit(4, "pt"),
+    axis.line = element_line(colour = "grey80")
+  )
+)
+
+# Shared plotly settings
+show_facets <- function(p) {
+  ggplotly(p, tooltip = "text", height = 550) |> 
+    config(displayModeBar = FALSE)
+}
 ```
 
 
 
-### Historic Emissions Trend 
+
+::: {.panel-tabset}
+
+## Absolute
+
+Each panel shows benzene emissions from one source category in kilotonnes. *Note:* Every panel has a separately scaled y-axis.
+
+```{r absolute-source}
+#| echo: false
+#| warning: false
+
+p_absolute <- category_trends |> 
+  ggplot(aes(x = year, y = emission, colour = final_category)) +
+  facet_style +
+  scale_y_continuous(name = "Emissions (kt)",
+                     limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
+  facet_wrap(~ final_category, nrow = 2, scales = "free_y",
+             labeller = label_wrap_gen(width = 18), axes = "all_x")
+
+show_plot(p_absolute, height = 550)
+
+```
+
+## Relative to baseline
+
+Each line shows a category's emissions as a percentage of the 1990 emissions. Road transport has fallen to 2% of its 1990 level, while waste (76%), shipping and other transport (69%) and domestic combustion (59%) have reduced by a lower fraction. These sources now make up a much bigger share of the total.
+
+```{r}
+#| echo: false
+#| warning: false
+
+p_relative <- category_trends |> 
+  ggplot(aes(x = year, y = emissions_pct_baseline, colour = final_category)) +
+  geom_hline(yintercept = 100, linetype = "dashed", colour = "grey70", linewidth = 0.4) +
+  facet_style +
+  scale_y_continuous(name = "Emissions (% of 1990)",
+                     limits = c(0, 135), breaks = seq(0, 125, 25), expand = c(0, 0)) +
+  facet_wrap(~ final_category, nrow = 2,
+             labeller = label_wrap_gen(width = 18), axes = "all_x")
+
+show_plot(p_relative, height = 550)
+```
+
+:::
+
+
+These figures show that UK benzene emissions have changed from being dominated by a mobile distributed source to being spread across several smaller ones. Many of the remaining sources, such as refineries and industrial plants, are located in fixed places rather than spread along the road network. This means national totals may say less about local exposure than they once did, and it motivates looking at where emissions occur and what we are monitoring -  discussed in the next section.
 
 ### Emissions from Point Sources
 
-#### Point Sources as a % of total emissions 
+Point sources are individual facilities, such as refineries, chemical works, steelworks and incinerators, whose emissions are reported to the NAEI at a specific location. Unlike diffuse sources like road traffic or domestic heating, their emissions are concentrated at one site, so they can have a disproportionate effect on air quality in the surrounding communities.
+
+In 2005, point sources accounted for 10.6% of UK benzene emissions (1885 t). As of  2023, point sources accounted for 769 t, representing 9.6% of emissions. 
+
+```{r point-sources-data}
+#| echo: false
+#| message: false
+#| warning: false
+
+
+# Created by scripts/point_sources_prep.R — rerun that script if the NAEI data changes
+uk_outline_bng         <- read_rds("processed_data/uk_outline_bng.rds")
+point_sources          <- read_rds("processed_data/point_sources.rds")
+top_sites              <- read_rds("processed_data/top_sites.rds")
+industrial_communities <- read_rds("processed_data/industrial_communities.rds")
+ 
+# Interactive in HTML, static in Word/PDF 
+if (!exists("show_plot")) {
+  show_plot <- function(p, ...) {
+    if (knitr::is_html_output()) {
+      ggplotly(p, tooltip = "text", ...) |> config(displayModeBar = FALSE)
+    } else {
+      p
+    }
+  }
+}
+ 
+point_colour <- "#16317D"   # single colour for one-series charts
+ 
+# ---- Key numbers used in the text ----
+# point-source Emission is in tonnes; national totals are in kt
+point_share <- point_sources |>
+  st_drop_geometry() |>
+  summarise(point_total_t = sum(Emission, na.rm = TRUE), .by = Year) |>
+  left_join(yearly_emissions, by = c("Year" = "year")) |>
+  mutate(national_t = total_emissions_kt * 1000,
+         point_pct  = point_total_t / national_t * 100)
+ 
+latest_year  <- max(point_share$Year)
+latest_share <- point_share |> filter(Year == latest_year)
+ 
+# Concentration: sort sites from largest to smallest
+site_ranking <- point_sources |>
+  st_drop_geometry() |>
+  filter(Year == latest_year) |>
+  summarise(Emission = sum(Emission, na.rm = TRUE), .by = c(Site, Sector)) |>
+  arrange(desc(Emission)) |>
+  mutate(
+    rank           = row_number(),
+    site_pct       = rank / n(),
+    cumulative_pct = cumsum(Emission) / sum(Emission)
+  )
+ 
+
+n_sites     <- nrow(site_ranking)
+
+top10_share <- site_ranking |> 
+  filter(rank == 10) |> 
+  pull(cumulative_pct)
+```
+
+
+
+```{r point-share}
+#| echo: false
+#| warning: false
+ 
+p_point_share <- point_share |>
+  ggplot(aes(x = Year, y = point_pct)) +
+  geom_line(colour = point_colour, linewidth = 0.8) +
+  geom_point(aes(text = paste0("Year: ", Year, "<br>",
+                               "Point sources: ", round(point_total_t), " t<br>",
+                               "Share of UK total: ", round(point_pct, 1), "%")),
+             colour = "black", size = 0.8) +
+  scale_x_continuous(name = NULL) +
+  scale_y_continuous(name = "Point sources (% of UK total)",
+                     labels = \(x) paste0(x, "%"),
+                     limits = c(0, 12.5), expand = expansion(mult = c(0, 0.05))) +
+  theme_minimal(base_size) +
+  theme(panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "grey80"),
+        axis.ticks = element_line(colour = "grey70"))
+ 
+show_plot(p_point_share)
+```
+ 
+Total point-source emissions are dominated by a small number of sites. Of the `r n_sites` sites reporting benzene emissions in `r latest_year`, the ten largest account for `r scales::percent(top10_share, accuracy = 1)` of point-source emissions.
+ 
+```{r point-concentration}
+#| echo: false
+#| warning: false
+ 
+p_concentration <- site_ranking |>
+  ggplot(aes(x = site_pct, y = cumulative_pct)) +
+  geom_line(colour = point_colour, linewidth = 1) +
+  geom_point(aes(text = paste0("<b>", Site, "</b><br>",
+                               "Rank: ", rank, " of ", n_sites, "<br>",
+                               "Emission: ", round(Emission, 4), " t<br>",
+                               "Cumulative share: ", scales::percent(cumulative_pct, 0.1))),
+             colour = "black", size = 0.3) +
+  scale_x_continuous(name = "Sites, largest first (% of all sites)",
+                     labels = scales::percent, breaks = seq(0, 1, 0.1),
+                     expand = c(0, 0)) +
+  scale_y_continuous(name = "Cumulative share of point-source emissions",
+                     labels = scales::percent, breaks = seq(0, 1, 0.1),
+                     limits = c(0, 1.04), expand = c(0, 0)) +
+  theme_minimal(base_size) +
+  theme(panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "grey80"))
+ 
+show_plot(p_concentration)
+```
+ 
+#### Largest point sources
+ 
+```{r top-sites-map}
+#| echo: false
+#| warning: false
+#| column: page
+ 
+if (knitr::is_html_output()) {
+ 
+  # ---- Yearly emissions for each top site since 2005 ----
+  site_trends <- point_sources |>
+    st_drop_geometry() |>
+    filter(Site %in% top_sites$Site, Year >= 2005) |>
+    summarise(Emission = sum(Emission, na.rm = TRUE), .by = c(Site, Year)) |>
+    arrange(Site, Year)
+ 
+  # Main sector for each site (largest emitter in the latest year)
+  site_sectors <- point_sources |>
+    st_drop_geometry() |>
+    filter(Site %in% top_sites$Site, Year == latest_year) |>
+    summarise(Emission = sum(Emission, na.rm = TRUE), .by = c(Site, Sector)) |>
+    slice_max(Emission, n = 1, by = Site, with_ties = FALSE) |>
+    select(Site, Sector)
+ 
+  # Tiny inline SVG line chart for the popup (no extra packages needed)
+  sparkline_svg <- function(years, values, width = 180, height = 45,
+                            colour = point_colour) {
+    x <- scales::rescale(years, to = c(3, width - 3))
+    y <- scales::rescale(values, to = c(height - 3, 3),
+                         from = c(0, max(values, 1e-9)))
+    pts <- paste(round(x, 1), round(y, 1), sep = ",", collapse = " ")
+    sprintf(
+      '<svg width="%d" height="%d" style="display:block;margin-top:4px">
+         <line x1="0" y1="%d" x2="%d" y2="%d" stroke="#ddd"/>
+         <polyline points="%s" fill="none" stroke="%s" stroke-width="2"/>
+       </svg>',
+      width, height, height - 3, width, height - 3, pts, colour
+    )
+  }
+ 
+  # ---- Build the popup HTML for each site ----
+  site_popups <- site_trends |>
+    summarise(
+      first_year      = min(Year),
+      last_year       = max(Year),
+      first_emission  = Emission[which.min(Year)],
+      latest_emission = Emission[which.max(Year)],
+      spark           = sparkline_svg(Year, Emission),
+      .by = Site
+    ) |>
+    left_join(site_sectors, by = "Site") |>
+    mutate(
+      pct_change  = (latest_emission / first_emission - 1) * 100,
+      change_text = case_when(
+        first_emission == 0 ~ paste0("No emissions reported in ", first_year),
+        pct_change < 0      ~ paste0("&#9660; ", abs(round(pct_change)), "% since ", first_year),
+        TRUE                ~ paste0("&#9650; ", round(pct_change), "% since ", first_year)
+      ),
+      popup = paste0(
+        "<div style='font-family:sans-serif;font-size:13px;line-height:1.4'>",
+        "<b>", htmltools::htmlEscape(Site), "</b><br>",
+        "<span style='color:#666'>", htmltools::htmlEscape(Sector), "</span><br>",
+        "<b>", round(latest_emission, 1), " t</b> in ", last_year, "<br>",
+        change_text,
+        spark,
+        "<div style='display:flex;justify-content:space-between;width:180px;",
+        "font-size:11px;color:#888'><span>", first_year, "</span><span>",
+        last_year, "</span></div>",
+        "</div>"
+      )
+    ) |>
+    select(Site, popup)
+ 
+  # ---- Map ----
+  top_sites |>
+    left_join(site_popups, by = "Site") |>
+    st_transform(4326) |>
+    st_centroid() |>
+    leaflet() |>
+    addProviderTiles(providers$Esri.WorldGrayCanvas) |>   # no API key needed
+    addCircleMarkers(
+      radius = ~ scales::rescale(sqrt(Emission), to = c(5, 20)),
+      color = point_colour, fillOpacity = 0.6, stroke = FALSE,
+      label = ~ Site,                                      # hover: name only
+      popup = ~ popup                                      # click: full details
+    )
+} else {
+  ggplot() +
+    geom_sf(data = uk_outline_bng, fill = "grey95", colour = "grey70") +
+    geom_sf(data = top_sites, aes(size = Emission), colour = "darkblue",
+             alpha = 0.6, show.legend = "point") +
+    scale_size_area(name = "Emission (t/yr)", max_size = 10, breaks = c(1, 10, 50, 100)) +
+    guides(colour = "none",
+         size = guide_legend(override.aes = list(colour = "grey40"))) +
+    theme_void(12)
+}
+```
+
+
+
+
+## Monitoring
+
+```{r monitoring-data}
+#| echo: false
+#| message: false
+#| warning: false
+
+# Created by R/prepare_monitoring_sites.R
+monitoring_sites        <- read_rds("processed_data/monitoring_sites.rds")
+sites_active_years      <- read_rds("processed_data/sites_active_years.rds")
+nearest_monitor_by_year <- read_rds("processed_data/nearest_monitor_by_year.rds")
+nearest_monitor_current <- read_rds("processed_data/nearest_monitor_current.rds")
+
+# ---- Colours ----
+status_colours <- c(active = "#4a3aa7", closed = "#b5b5b0")
+source_marker  <- "#A40000"     # same red as "Industry" in the emissions charts
+
+category_colours <- c(
+  "Urban Traffic"       = "#2a78d6",
+  "Urban Industrial"    = "#4a3aa7",
+  "Urban Background"    = "#1baf7a",
+  "Suburban Background" = "#eda100",
+  "Rural Background"    = "#e34948"
+)
+
+# ---- Numbers for the text ----
+n_active      <- sum(monitoring_sites$status == "active")
+n_active_ahn  <- sum(monitoring_sites$status == "active" & monitoring_sites$network == "AHN")
+n_active_nahn <- sum(monitoring_sites$status == "active" & monitoring_sites$network == "NAHN")
+n_ever        <- nrow(monitoring_sites)
+
+sites_per_year <- sites_active_years |>
+  st_drop_geometry() |>
+  count(year, network_label, `Environment Type`, name = "n_sites") |>
+  mutate(`Environment Type` = factor(`Environment Type`, levels = names(category_colours)))
+
+peak <- sites_per_year |>
+  summarise(n_sites = sum(n_sites), .by = year) |>
+  slice_max(n_sites, n = 1, with_ties = FALSE)
+```
+
+Benzene in ambient air is regulated under the Air Quality Standards Regulations 2010, which set an annual mean limit value of 5 µg m^-3^. Defra monitors it through the UK Hydrocarbons Network, which is made up of two complementary parts: a small number of automatic sites giving high time-resolution data, and a larger network of non-automatic samplers giving wider spatial coverage. In 2023, no UK monitoring site exceeded the limit value.
+
+### Automatic Hydrocarbon Network
+
+The Automatic Hydrocarbon Network uses automated gas chromatography to measure 29 volatile organic compounds, including benzene and 1,3-butadiene, every hour. It currently has `r n_active_ahn` active sites. The hourly data are valuable for understanding daily cycles and short pollution episodes and for identifying sources. However, with so few sites, the network cannot say much about how concentrations vary across the country.
+
+### Non-Automatic Hydrocarbon Network
+
+The Non-Automatic Hydrocarbon Network gives much wider coverage, with `r n_active_nahn` active sites. Air is drawn through dual sorbent tubes by a controlled-flow pump. The tubes are changed every two weeks and analysed in the laboratory by thermal desorption and gas chromatography–mass spectrometry. This gives fortnightly averages, not hourly values, but the extra sites cover a far wider range of locations.
+
+### Network coverage over time
+
+`r n_ever` sites have measured benzene in the two networks at some point, and `r n_active` are active today. Coverage peaked in `r peak$year`, with `r peak$n_sites` sites running.
+
+::: {.panel-tabset}
+
+## Sites per year
+
+```{r sites-per-year}
+#| echo: false
+#| warning: false
+
+p_sites_year <- sites_per_year |>
+  summarise(n_sites = sum(n_sites), .by = c(year, `Environment Type`)) |>
+  ggplot(aes(x = year, y = n_sites, fill = `Environment Type`,
+             text = paste0("<b>", `Environment Type`, "</b><br>",
+                           "Year: ", year, "<br>",
+                           "Sites: ", n_sites))) +
+  geom_col(width = 0.85, colour = "white", linewidth = 0.2) +
+  scale_fill_manual(values = category_colours, name = NULL) +
+  scale_y_continuous(name = "Number of sites", expand = expansion(mult = c(0, 0.05))) +
+  scale_x_continuous(name = NULL,
+                     breaks = seq(1995, 2025, 5),
+                     labels = \(x) ifelse(x %% 10 == 0, x, "")) +
+  guides(fill = guide_legend(nrow = 2)) +
+  labs(caption = "One site classified as \"Unknown Industrial\" (2008–2010) is shown as Urban Industrial.") +
+  theme_minimal(base_size) +
+  theme(
+    legend.position = "top",
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "grey80"),
+    axis.ticks.x = element_line(colour = "grey70")
+  )
+
+show_plot(p_sites_year)
+```
+
+## Active and closed sites
+
+```{r site-status}
+#| echo: false
+#| warning: false
+
+p_status <- monitoring_sites |>
+  st_drop_geometry() |>
+  count(network_label, status, `Environment Type`, name = "count") |>
+  mutate(`Environment Type` = fct_reorder(`Environment Type`, count, sum),
+         status = factor(status, levels = c("closed", "active"))) |>
+  ggplot(aes(x = count, y = `Environment Type`, fill = status,
+             text = paste0("<b>", `Environment Type`, "</b><br>",
+                           network_label, ", ", status, ": ", count, " sites"))) +
+  geom_col(width = 0.7, colour = "white", linewidth = 0.2) +
+  facet_wrap(~ network_label, ncol = 1, scales = "free_y") +
+  scale_fill_manual(values = status_colours, name = NULL,
+                    breaks = c("active", "closed"),
+                    labels = c("Active", "Closed")) +
+  scale_x_continuous(name = "Number of monitoring sites",
+                     expand = expansion(mult = c(0, 0.05))) +
+  labs(y = NULL) +
+  theme_minimal(base_size) +
+  theme(
+    legend.position = "top",
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold", hjust = 0)
+  )
+
+show_plot(p_status)
+```
+
+:::
+
+## Location of Emissions relative to Monitoring
+
+```{r location-numbers}
+#| echo: false
+
+distance_stats <- nearest_monitor_by_year |>
+  summarise(
+    median_km   = median(distance_km, na.rm = TRUE),
+    weighted_km = weighted.mean(distance_km, w = Emission, na.rm = TRUE),
+    .by = Year
+  ) |>
+  arrange(Year)
+
+n_communities      <- nrow(nearest_monitor_current)
+n_no_monitor_10km  <- sum(nearest_monitor_current$monitors_within_10km == 0)
+median_current_km  <- median(nearest_monitor_current$distance_km)
+```
+
+The monitoring networks were largely designed when road transport dominated benzene emissions, so most sites are in urban areas. As the emission profile has shifted towards domestic combustion and industrial point sources, it is worth asking whether the networks still sample the places where people are most exposed.
+
+Of the `r n_communities` largest point sources in `r latest_year`, `r n_no_monitor_10km` have no active benzene monitor within 10 km. The median distance from one of these sites to its nearest active monitor is `r round(median_current_km)` km.
+
+```{r monitoring-map}
+#| echo: false
+#| warning: false
+#| column: page
+
+active_sites <- monitoring_sites |> filter(status == "active")
+closed_sites <- monitoring_sites |> filter(status == "closed")
+
+if (knitr::is_html_output()) {
+
+  # Reuse the point-source popups if the earlier chunk created them
+  map_sources <- top_sites
+  if (exists("site_popups")) {
+    map_sources <- map_sources |> left_join(site_popups, by = "Site")
+  } else {
+    map_sources <- map_sources |> mutate(popup = Site)
+  }
+  map_sources <- map_sources |> st_transform(4326) |> st_centroid()
+
+  site_label <- \(d) paste0(d$`Site Name`, " (", d$network_label, ", ",
+                            d$`Environment Type`, ")")
+
+  leaflet() |>
+    addProviderTiles(providers$Esri.WorldGrayCanvas, group = "Grey") |>
+    addProviderTiles(providers$Esri.WorldImagery,    group = "Satellite") |>
+    # 10 km industrial-community radius
+    addCircles(data = map_sources, radius = 10000,
+               color = source_marker, weight = 1, fillOpacity = 0.05,
+               group = "10 km around major sources") |>
+    addCircleMarkers(data = st_transform(closed_sites, 4326),
+                     radius = 4, color = status_colours[["closed"]],
+                     fillOpacity = 0.8, stroke = FALSE,
+                     label = site_label(closed_sites),
+                     group = "Closed monitoring sites") |>
+    addCircleMarkers(data = st_transform(active_sites, 4326),
+                     radius = 5, color = status_colours[["active"]],
+                     fillOpacity = 0.9, stroke = FALSE,
+                     label = site_label(active_sites),
+                     group = "Active monitoring sites") |>
+    addCircleMarkers(data = map_sources,
+                     radius = 7, color = source_marker, weight = 2,
+                     fillOpacity = 0.3,
+                     label = ~ Site, popup = ~ popup,
+                     group = "Major point sources") |>
+    addLayersControl(
+      baseGroups    = c("Grey", "Satellite"),
+      overlayGroups = c("Active monitoring sites", "Closed monitoring sites",
+                        "Major point sources", "10 km around major sources"),
+      options = layersControlOptions(collapsed = FALSE)
+    ) |>
+    hideGroup("Closed monitoring sites") |>
+    addLegend(position = "bottomright",
+              colors = c(status_colours[["active"]], status_colours[["closed"]], source_marker),
+              labels = c("Active monitor", "Closed monitor", "Major point source"),
+              opacity = 0.9)
+
+} else {
+  ggplot() +
+    geom_sf(data = uk_outline_bng, fill = "grey95", colour = "grey70") +
+    geom_sf(data = st_buffer(top_sites, 10000),
+            fill = source_marker, alpha = 0.08, colour = source_marker, linewidth = 0.2) +
+    geom_sf(data = active_sites, aes(shape = network_label),
+            colour = status_colours[["active"]], size = 2) +
+    geom_sf(data = top_sites, colour = source_marker, shape = 4, size = 3, stroke = 1.2) +
+    scale_shape_manual(values = c(Automatic = 17, `Non-automatic` = 16), name = "Active monitor") +
+    labs(caption = "Red crosses: largest point sources, with 10 km radius.") +
+    theme_void(12) +
+    theme(legend.position = "top")
+}
+```
+
+#### Nearest monitor to each major source
+
+```{r nearest-table}
+#| echo: false
+
+nearest_monitor_current |>
+  transmute(
+    `Point source`       = Site,
+    `Emission (t)`       = round(Emission, 1),
+    `Nearest monitor`    = paste0(nearest_site, " (", nearest_network, ")"),
+    `Monitor type`       = nearest_type,
+    `Distance (km)`      = round(distance_km, 1),
+    `Monitors within 10 km` = monitors_within_10km
+  ) |>
+  knitr::kable(align = "lrllrr")
+```
+
+#### Has monitoring kept up with the sources?
+
+The chart below compares each year's 100 largest point sources with the monitors running in that year. It shows the median distance to the nearest monitor, and the mean weighted by emissions, which gives more influence to the largest sources.
+
+```{r distance-trend}
+#| echo: false
+#| warning: false
+
+p_distance <- distance_stats |>
+  pivot_longer(c(median_km, weighted_km), names_to = "measure", values_to = "km") |>
+  mutate(measure = recode(measure,
+                          median_km   = "Median",
+                          weighted_km = "Emission-weighted mean")) |>
+  ggplot(aes(x = Year, y = km, linetype = measure)) +
+  geom_line(colour = point_colour, linewidth = 0.8) +
+  geom_point(aes(text = paste0("<b>", measure, "</b><br>",
+                               "Year: ", Year, "<br>",
+                               "Distance: ", round(km, 1), " km")),
+             colour = point_colour, size = 0.6) +
+  scale_linetype_manual(values = c("Median" = "solid",
+                                   "Emission-weighted mean" = "dashed"),
+                        name = NULL) +
+  scale_y_continuous(name = "Distance to nearest active monitor (km)",
+                     limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
+  scale_x_continuous(name = NULL) +
+  theme_minimal(base_size) +
+  theme(
+    legend.position = "top",
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "grey80"),
+    axis.ticks = element_line(colour = "grey70")
+  )
+
+show_plot(p_distance)
+```
+
+
+
+### Comparing automatic and non-automatic measurements
+ 
+```{r comparison-data}
+#| echo: false
+#| message: false
+ 
+# Created by R/prepare_network_comparison.R
+closest_pairs          <- read_rds("processed_data/closest_network_pairs.rds")
+comparison_sites       <- read_rds("processed_data/comparison_sites.rds")
+comparison_fortnightly <- read_rds("processed_data/comparison_fortnightly.rds")
+ 
+# One colour per site, used in both the map and the plot
+comparison_colours <- c(
+  "London Marylebone Road" = "#2a78d6",
+  "Camden Kerbside"        = "#eb6834",
+  "London Bloomsbury"      = "#1baf7a"
+)
+```
+ 
+No automatic and non-automatic monitors share a location, so the two methods cannot be compared directly. The table below lists the ten closest pairs of automatic and non-automatic sites that operated in the same years.
+ 
+```{r closest-pairs-table}
+#| echo: false
+ 
+closest_pairs |>
+  transmute(
+    `Automatic site`         = ahn_site,
+    `Type`                   = ahn_type,
+    `Non-automatic site`     = nahn_site,
+    `Type `                  = nahn_type,
+    `Distance (km)`          = round(distance_km, 1),
+    `Years operating together` = paste0(first_year, "–", last_year,
+                                        " (", overlap_years, " yrs)")
+  ) |>
+  knitr::kable(align = "llllrl")
+```
+ 
+London Marylebone Road (automatic) was compared with two nearby non-automatic sites: Camden Kerbside, another roadside site, and London Bloomsbury, an urban background site.
+ 
+```{r comparison-map}
+#| echo: false
+#| warning: false
+ 
+sites_4326 <- comparison_sites |> st_transform(4326)
+ahn_point  <- sites_4326 |> filter(network_label == "Automatic")
+nahn_pts   <- sites_4326 |> filter(network_label != "Automatic")
+ 
+# Distances from Marylebone Road for the labels
+nahn_pts <- nahn_pts |>
+  mutate(distance_km = as.numeric(st_distance(geometry, ahn_point$geometry)) / 1000)
+ 
+if (knitr::is_html_output()) {
+ 
+  # Lines from Marylebone Road to each non-automatic site
+  links <- st_sfc(
+    lapply(seq_len(nrow(nahn_pts)), \(k)
+      st_linestring(rbind(st_coordinates(ahn_point), st_coordinates(nahn_pts[k, ])))),
+    crs = 4326
+  )
+ 
+  leaflet() |>
+   addProviderTiles(providers$Esri.WorldGrayCanvas) |>
+    addPolylines(data = links, color = "grey40", weight = 1.5, dashArray = "4",
+                 label = paste0(round(nahn_pts$distance_km, 1), " km")) |>
+    addCircleMarkers(
+      data = sites_4326,
+      radius = 8, stroke = TRUE, color = "white", weight = 2, fillOpacity = 1,
+      fillColor = ~ unname(comparison_colours[site]),
+      label = ~ paste0(site, " (", network_label, ", ", `Environment Type`, ")"),
+      labelOptions = labelOptions(noHide = TRUE, direction = "right")
+    )
+ 
+} else {
+  ggplot() +
+    ggspatial::annotation_map_tile(type = "osm", zoom = 14, progress = "none") +
+    ggspatial::annotation_scale(
+    location = "bl",
+    width_hint = 0.25,
+    text_cex = 0.8
+  ) +
+    geom_sf(data = sites_4326, aes(colour = site), size = 4) +
+    geom_sf_label(data = sites_4326, aes(label = site), nudge_y = 0.0015,
+                  size = 3, label.size = 0) +
+    scale_colour_manual(values = comparison_colours, guide = "none") +
+    coord_sf(expand = TRUE) +
+    theme_void()
+}
+```
+ 
+The chart below shows fortnightly benzene concentrations at the three sites. The automatic values are hourly measurements averaged over the same two-week periods as the non-automatic samples.
+ 
+```{r comparison-plot}
+#| echo: false
+#| warning: false
+#| column: page
+ 
+p_comparison <- comparison_fortnightly |>
+  ggplot(aes(x = mid_date, y = benzene, colour = site)) +
+  geom_line(aes(group = interaction(site, segment)), linewidth = 0.5, alpha = 0.8) +
+  geom_point(aes(text = paste0("<b>", label, "</b><br>",
+                               format(start_date, "%d %b %Y"), " to ",
+                               format(end_date, "%d %b %Y"), "<br>",
+                               "Benzene: ", round(benzene, 2), " µg m⁻³")),
+             size = 0.8) +
+  scale_colour_manual(values = comparison_colours, name = NULL,
+                      labels = c("London Marylebone Road" = "London Marylebone Road (automatic)",
+                                 "Camden Kerbside(Swiss Cottage)"        = "Camden Kerbside (non-automatic)",
+                                 "London Bloomsbury"      = "London Bloomsbury (non-automatic)")) +
+  scale_y_continuous(name = "Benzene (µg m⁻³)", limits = c(0, NA),
+                     expand = expansion(mult = c(0, 0.05))) +
+  scale_x_date(name = NULL) +
+  theme_minimal(base_size) +
+  theme(legend.position = "top",
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "grey80"),
+        axis.ticks.x = element_line(colour = "grey70"))
+ 
+show_plot(p_comparison)
+```
